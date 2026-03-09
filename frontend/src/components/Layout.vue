@@ -2,8 +2,8 @@
   <el-container class="layout">
     <el-aside width="200px" class="aside">
       <div class="logo">
-        <span class="logo-text">wasai</span>
-        <span class="logo-sub">瓦赛</span>
+        <span class="logo-text">WasAI</span>
+        <span class="logo-sub">哇塞！</span>
       </div>
       <el-menu
         :default-active="activeMenu"
