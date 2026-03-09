@@ -78,7 +78,7 @@ class TranslateService:
 请保持原有的格式标记（如 [0], [1] 等），每条文本用 --- 分隔。
 只输出翻译结果，不要添加解释。
 
-{texts}
+{batch_text}
 """
 
             response = self.client.chat.completions.create(
@@ -102,4 +102,4 @@ class TranslateService:
                 else:
                     results.append(line)
 
-        return results[:len(texts)]
+        return results

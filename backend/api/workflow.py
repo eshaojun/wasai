@@ -302,8 +302,22 @@ def execute_export(
     project.output_video_path = str(final_output)
     db.commit()
 
+    # 构建下载 URL（相对于 uploads 目录）
+    try:
+        # 从路径中提取项目 ID 和文件名
+        # final_output 形如: uploads/project_1/output/output_with_subtitles.mp4
+        output_file = Path(final_output)
+        relative_path = output_file.relative_to(Path("uploads").absolute())
+        download_url = f"/uploads/{relative_path.as_posix()}"
+        filename = output_file.name
+    except Exception:
+        download_url = str(final_output)
+        filename = Path(final_output).name
+
     return {
         "message": "视频导出完成",
         "output_path": str(final_output),
+        "download_url": download_url,
+        "filename": filename,
         "burn_subtitles": request.burn_subtitles
     }

@@ -162,3 +162,179 @@ def batch_update_subtitles(
 
     db.commit()
     return {"message": f"已更新 {len(updated)} 条字幕"}
+
+
+# ===== 字幕导入导出接口 =====
+
+from fastapi import UploadFile, File, Query
+from fastapi.responses import PlainTextResponse
+from utils.subtitle import (
+    parse_subtitle_file,
+    to_srt,
+    to_ass,
+    entries_to_dicts,
+    SubtitleEntry
+)
+
+
+@router.post("/{project_id}/subtitles/preview-import")
+async def preview_import_subtitles(
+    project_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """预览导入字幕文件（不保存）"""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    # 检查文件类型
+    filename = file.filename or ""
+    allowed_extensions = ['.srt', '.ass', '.ssa', '.txt']
+    if not any(filename.lower().endswith(ext) for ext in allowed_extensions):
+        raise HTTPException(status_code=400, detail="不支持的文件格式，请上传 SRT 或 ASS 文件")
+
+    try:
+        # 读取文件内容
+        content = await file.read()
+
+        # 解析字幕
+        entries, format_type = parse_subtitle_file(content)
+
+        if not entries:
+            raise HTTPException(status_code=400, detail="未能解析出有效字幕，请检查文件格式")
+
+        # 转换为字典
+        subtitles_preview = [
+            {
+                "sequence": e.sequence,
+                "start_time": e.start_time,
+                "end_time": e.end_time,
+                "original_text": e.text if project.source_language == 'zh' else "",
+                "translated_text": e.text if project.target_language != 'zh' else ""
+            }
+            for e in entries
+        ]
+
+        return {
+            "message": f"成功解析 {len(subtitles_preview)} 条字幕",
+            "format": format_type,
+            "filename": filename,
+            "subtitles": subtitles_preview
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"解析字幕失败: {str(e)}")
+
+
+@router.post("/{project_id}/subtitles/import")
+def import_subtitles(
+    project_id: int,
+    subtitles: List[SubtitleUpdate],
+    mode: str = Query("replace", description="导入模式: replace=替换, append=追加"),
+    db: Session = Depends(get_db)
+):
+    """确认导入字幕"""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    try:
+        if mode == "replace":
+            # 删除现有字幕
+            db.query(Subtitle).filter(Subtitle.project_id == project_id).delete()
+            db.flush()
+
+            # 添加新字幕
+            for sub_data in subtitles:
+                db_subtitle = Subtitle(
+                    project_id=project_id,
+                    start_time=sub_data.start_time or 0,
+                    end_time=sub_data.end_time or 0,
+                    original_text=sub_data.original_text or "",
+                    translated_text=sub_data.translated_text or "",
+                    sequence=sub_data.sequence or 0
+                )
+                db.add(db_subtitle)
+
+        elif mode == "append":
+            # 获取当前最大序号
+            max_sequence = db.query(Subtitle).filter(
+                Subtitle.project_id == project_id
+            ).count()
+
+            # 追加新字幕
+            for i, sub_data in enumerate(subtitles):
+                db_subtitle = Subtitle(
+                    project_id=project_id,
+                    start_time=sub_data.start_time or 0,
+                    end_time=sub_data.end_time or 0,
+                    original_text=sub_data.original_text or "",
+                    translated_text=sub_data.translated_text or "",
+                    sequence=max_sequence + i
+                )
+                db.add(db_subtitle)
+
+        db.commit()
+
+        # 更新项目状态
+        if project.status == ProjectStatus.UPLOADED:
+            project.status = ProjectStatus.ASR_DONE
+            db.commit()
+
+        return {"message": f"成功导入 {len(subtitles)} 条字幕"}
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"导入字幕失败: {str(e)}")
+
+
+@router.get("/{project_id}/subtitles/export")
+def export_subtitles(
+    project_id: int,
+    format: str = Query("srt", description="导出格式: srt 或 ass"),
+    db: Session = Depends(get_db)
+):
+    """导出字幕文件"""
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    # 获取字幕
+    subtitles = db.query(Subtitle).filter(
+        Subtitle.project_id == project_id
+    ).order_by(Subtitle.sequence).all()
+
+    if not subtitles:
+        raise HTTPException(status_code=400, detail="项目没有字幕数据")
+
+    try:
+        # 转换为字幕条目
+        entries = [
+            SubtitleEntry(
+                sequence=s.sequence,
+                start_time=s.start_time,
+                end_time=s.end_time,
+                text=s.translated_text or s.original_text or ""
+            )
+            for s in subtitles
+        ]
+
+        if format.lower() == "ass":
+            content = to_ass(entries, project.name)
+            filename = f"{project.name}.ass"
+        else:
+            content = to_srt(entries)
+            filename = f"{project.name}.srt"
+
+        # 使用 UTF-8 编码
+        return PlainTextResponse(
+            content=content,
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"导出字幕失败: {str(e)}")

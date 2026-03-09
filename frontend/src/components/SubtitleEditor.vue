@@ -10,7 +10,30 @@
       <el-button @click="saveSubtitles" type="success">
         <el-icon><Check /></el-icon>保存修改
       </el-button>
+      <el-divider direction="vertical" />
+      <el-button @click="showImportDialog">
+        <el-icon><Upload /></el-icon>导入字幕
+      </el-button>
+      <el-dropdown @command="handleExport" trigger="click">
+        <el-button>
+          <el-icon><Download /></el-icon>导出字幕
+        </el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="srt">导出为 SRT</el-dropdown-item>
+            <el-dropdown-item command="ass">导出为 ASS</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
     </div>
+
+    <!-- 导入对话框 -->
+    <SubtitleImportDialog
+      v-model="importDialogVisible"
+      :project-id="projectId"
+      :existing-subtitles="subtitles"
+      @imported="onSubtitlesImported"
+    />
 
     <div class="subtitle-list">
       <div
@@ -80,7 +103,8 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { translateSubtitles } from '@/api'
+import { translateSubtitles, exportSubtitles } from '@/api'
+import SubtitleImportDialog from './SubtitleImportDialog.vue'
 
 const props = defineProps({
   modelValue: {
@@ -101,11 +125,12 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['update:modelValue', 'save'])
+const emit = defineEmits(['update:modelValue', 'save', 'refresh'])
 
 const subtitles = ref([])
 const selectedIndex = ref(-1)
 const translating = ref(false)
+const importDialogVisible = ref(false)
 
 watch(() => props.modelValue, (newVal) => {
   subtitles.value = JSON.parse(JSON.stringify(newVal))
@@ -182,6 +207,40 @@ const autoTranslate = async () => {
 const saveSubtitles = () => {
   emit('update:modelValue', subtitles.value)
   emit('save', subtitles.value)
+}
+
+const showImportDialog = () => {
+  importDialogVisible.value = true
+}
+
+const onSubtitlesImported = (importedSubtitles) => {
+  // 替换当前字幕
+  subtitles.value = importedSubtitles
+  emit('update:modelValue', subtitles.value)
+  emit('save', subtitles.value)
+  emit('refresh')
+  ElMessage.success('字幕导入成功')
+}
+
+const handleExport = async (format) => {
+  try {
+    const response = await exportSubtitles(props.projectId, format)
+
+    // 创建下载链接
+    const blob = new Blob([response], { type: 'text/plain;charset=utf-8' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `subtitles.${format}`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+
+    ElMessage.success(`字幕已导出为 ${format.toUpperCase()} 格式`)
+  } catch (error) {
+    ElMessage.error('导出失败：' + error.message)
+  }
 }
 </script>
 
