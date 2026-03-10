@@ -42,21 +42,93 @@
       <!-- 翻译设置 -->
       <el-tab-pane label="翻译">
         <el-form :model="settings" label-width="120px" class="settings-form">
+          <!-- 提供商选择 -->
           <el-form-item label="服务提供商">
-            <el-radio-group v-model="settings.translate_provider">
+            <el-radio-group v-model="settings.translate.provider">
+              <el-radio label="custom">自定义接口</el-radio>
               <el-radio label="openai">OpenAI</el-radio>
-              <el-radio label="deepl" disabled>DeepL（开发中）</el-radio>
             </el-radio-group>
           </el-form-item>
-          <template v-if="settings.translate_provider === 'openai'">
+
+          <!-- OpenAI 配置 -->
+          <template v-if="settings.translate.provider === 'openai'">
+            <el-form-item label="API Key">
+              <el-input
+                v-model="settings.translate.openai_api_key"
+                type="password"
+                show-password
+                placeholder="sk-..."
+              />
+            </el-form-item>
             <el-form-item label="模型">
-              <el-select v-model="settings.translate_model">
+              <el-select v-model="settings.translate.openai_model">
                 <el-option label="GPT-4o Mini" value="gpt-4o-mini" />
                 <el-option label="GPT-4o" value="gpt-4o" />
                 <el-option label="GPT-3.5 Turbo" value="gpt-3.5-turbo" />
               </el-select>
             </el-form-item>
           </template>
+
+          <!-- 自定义接口配置 -->
+          <template v-if="settings.translate.provider === 'custom'">
+            <el-form-item label="Base URL">
+              <el-input
+                v-model="settings.translate.custom_base_url"
+                placeholder="https://api.deepseek.com/v1"
+              />
+              <div class="form-tip">支持任意兼容 OpenAI API 的服务商</div>
+            </el-form-item>
+            <el-form-item label="API Key">
+              <el-input
+                v-model="settings.translate.custom_api_key"
+                type="password"
+                show-password
+                placeholder="sk-..."
+              />
+            </el-form-item>
+            <el-form-item label="模型">
+              <el-input
+                v-model="settings.translate.custom_model"
+                placeholder="gpt-4o-mini"
+              />
+              <div class="form-tip">填写服务商支持的模型名称</div>
+            </el-form-item>
+          </template>
+
+          <!-- 翻译提示词 -->
+          <el-divider content-position="left">翻译提示词</el-divider>
+
+          <el-form-item label="预设模板">
+            <el-select v-model="selectedPromptTemplate" @change="onPromptTemplateChange">
+              <el-option label="标准翻译" value="standard" />
+              <el-option label="口语化翻译" value="colloquial" />
+              <el-option label="保留原文风格" value="preserve_style" />
+              <el-option label="自定义" value="custom" />
+            </el-select>
+          </el-form-item>
+
+          <el-form-item label="提示词内容">
+            <el-input
+              v-model="settings.translate.translate_prompt"
+              type="textarea"
+              :rows="4"
+              placeholder="输入翻译提示词..."
+            />
+          </el-form-item>
+
+          <!-- 批量翻译设置 -->
+          <el-divider content-position="left">批量翻译设置</el-divider>
+
+          <el-form-item label="批量大小">
+            <el-slider
+              v-model="settings.translate.translate_batch_size"
+              :min="10"
+              :max="100"
+              :step="10"
+              show-stops
+            />
+            <div class="form-tip">每次翻译的字幕条数: {{ settings.translate.translate_batch_size }} 条</div>
+          </el-form-item>
         </el-form>
       </el-tab-pane>
 
@@ -119,7 +191,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getSettings, updateSettings } from '@/api'
+import { getSettings, updateSettings, getTranslatePrompts } from '@/api'
 import LanguageSelect from '@/components/LanguageSelect.vue'
 
 const settings = ref({
@@ -127,9 +199,16 @@ const settings = ref({
   openai_api_key: '',
   openai_base_url: '',
   whisper_model: 'whisper-1',
-  translate_provider: 'openai',
-  deepl_api_key: '',
-  translate_model: 'gpt-4o-mini',
+  translate: {
+    provider: 'custom',
+    custom_base_url: '',
+    custom_api_key: '',
+    custom_model: 'gpt-4o-mini',
+    openai_api_key: '',
+    openai_model: 'gpt-4o-mini',
+    translate_prompt: '',
+    translate_batch_size: 50
+  },
   tts_provider: 'openai',
   azure_api_key: '',
   azure_region: '',
@@ -141,14 +220,53 @@ const settings = ref({
 
 const originalSettings = ref(null)
 const saving = ref(false)
+const translatePrompts = ref({})
+const selectedPromptTemplate = ref('custom')
 
 const loadSettings = async () => {
   try {
     const data = await getSettings()
-    settings.value = { ...settings.value, ...data }
+    // 兼容旧版本设置
+    if (data.translate) {
+      settings.value.translate = {
+        ...settings.value.translate,
+        ...data.translate
+      }
+    } else {
+      // 旧版本数据迁移
+      settings.value.translate.provider = data.translate_provider || 'custom'
+      settings.value.translate.custom_base_url = data.openai_base_url || ''
+      settings.value.translate.custom_api_key = data.deepl_api_key || ''
+      settings.value.translate.custom_model = data.translate_model || 'gpt-4o-mini'
+      settings.value.translate.translate_batch_size = data.translate_batch_size || 50
+    }
+    // 其他设置
+    settings.value.asr_provider = data.asr_provider || 'openai'
+    settings.value.openai_api_key = data.openai_api_key || ''
+    settings.value.openai_base_url = data.openai_base_url || ''
+    settings.value.whisper_model = data.whisper_model || 'whisper-1'
+    settings.value.tts_provider = data.tts_provider || 'openai'
+    settings.value.tts_model = data.tts_model || 'tts-1'
+    settings.value.tts_voice = data.tts_voice || 'alloy'
+    settings.value.default_source_language = data.default_source_language || 'zh'
+    settings.value.default_target_language = data.default_target_language || 'en'
+
     originalSettings.value = JSON.parse(JSON.stringify(settings.value))
+
+    // 加载预设提示词
+    try {
+      translatePrompts.value = await getTranslatePrompts()
+    } catch (e) {
+      console.warn('加载预设提示词失败:', e)
+    }
   } catch (error) {
     ElMessage.error('加载设置失败：' + error.message)
+  }
+}
+
+const onPromptTemplateChange = (template) => {
+  if (template !== 'custom' && translatePrompts.value[template]) {
+    settings.value.translate.translate_prompt = translatePrompts.value[template]
   }
 }
 

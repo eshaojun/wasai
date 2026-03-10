@@ -65,6 +65,15 @@
             />
           </div>
           <el-button
+            type="info"
+            size="small"
+            circle
+            @click.stop="seekVideoToSubtitle(index)"
+            title="跳转到视频"
+          >
+            <el-icon><VideoPlay /></el-icon>
+          </el-button>
+          <el-button
             type="danger"
             size="small"
             circle
@@ -103,6 +112,7 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { VideoPlay } from '@element-plus/icons-vue'
 import { translateSubtitles, exportSubtitles } from '@/api'
 import SubtitleImportDialog from './SubtitleImportDialog.vue'
 
@@ -125,20 +135,34 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['update:modelValue', 'save', 'refresh'])
+const emit = defineEmits(['update:modelValue', 'save', 'refresh', 'seek-video'])
 
 const subtitles = ref([])
 const selectedIndex = ref(-1)
 const translating = ref(false)
 const importDialogVisible = ref(false)
 
-watch(() => props.modelValue, (newVal) => {
-  subtitles.value = JSON.parse(JSON.stringify(newVal))
-}, { immediate: true, deep: true })
+// 滚动到指定字幕
+const scrollToSubtitle = (index) => {
+  const subtitleItems = document.querySelectorAll('.subtitle-item')
+  if (subtitleItems[index]) {
+    subtitleItems[index].scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+}
 
+// 选择字幕（供外部调用）
 const selectSubtitle = (index) => {
   selectedIndex.value = index
 }
+
+// 跳转到视频时间点
+const seekVideoToSubtitle = (index) => {
+  emit('seek-video', index)
+}
+
+watch(() => props.modelValue, (newVal) => {
+  subtitles.value = JSON.parse(JSON.stringify(newVal))
+}, { immediate: true, deep: true })
 
 const addSubtitle = () => {
   const lastSubtitle = subtitles.value[subtitles.value.length - 1]
@@ -242,6 +266,12 @@ const handleExport = async (format) => {
     ElMessage.error('导出失败：' + error.message)
   }
 }
+
+// 暴露方法供父组件调用
+defineExpose({
+  selectSubtitle,
+  scrollToSubtitle
+})
 </script>
 
 <style scoped>

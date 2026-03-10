@@ -23,20 +23,20 @@
       <div class="left-panel">
         <!-- 视频播放器 -->
         <div class="video-section">
-          <div v-if="!project.original_video_path" class="upload-section">
-            <VideoUploader
-              :project-id="projectId"
-              @success="onUploadSuccess"
-            />
-          </div>
-          <div v-else class="video-player">
-            <video
-              ref="videoRef"
-              :src="project.original_video_path"
-              controls
-              @timeupdate="onTimeUpdate"
-            />
-          </div>
+          <VideoUploader
+            v-if="!hasVideo"
+            :project-id="projectId"
+            @success="onUploadSuccess"
+          />
+          <VideoPlayer
+            v-else
+            ref="videoPlayerRef"
+            :video-url="videoUrl"
+            :video-info="videoInfo"
+            :subtitles="subtitles"
+            @subtitle-change="onSubtitleChange"
+            @time-update="onTimeUpdate"
+          />
         </div>
 
         <!-- 工作流面板 -->
@@ -61,7 +61,7 @@
               <el-input v-model="project.name" />
             </el-form-item>
             <el-form-item label="描述">
-              <el-input v-model="project.description" type="textarea" rows="2" />
+              <el-input v-model="project.description" type="textarea" :rows="2" />
             </el-form-item>
             <el-form-item label="源语言">
               <LanguageSelect v-model="project.source_language" size="small" />
@@ -85,11 +85,13 @@
             </div>
           </template>
           <SubtitleEditor
+            ref="subtitleEditorRef"
             v-model="subtitles"
             :project-id="projectId"
             :source-language="project.source_language"
             :target-language="project.target_language"
             @save="saveSubtitles"
+            @seek-video="seekToSubtitle"
           />
         </el-card>
       </div>
@@ -105,9 +107,11 @@ import {
   getProject,
   updateProject,
   getSubtitles,
-  batchUpdateSubtitles
+  batchUpdateSubtitles,
+  getProjectVideo
 } from '@/api'
 import VideoUploader from '@/components/VideoUploader.vue'
+import VideoPlayer from '@/components/VideoPlayer.vue'
 import SubtitleEditor from '@/components/SubtitleEditor.vue'
 import WorkflowPanel from '@/components/WorkflowPanel.vue'
 import LanguageSelect from '@/components/LanguageSelect.vue'
@@ -122,22 +126,70 @@ const project = ref({
   source_language: 'zh',
   target_language: 'en',
   status: 'draft',
-  original_video_path: null
+  original_video_path: null,
+  width: 0,
+  height: 0,
+  fps: 0,
+  duration: 0
 })
 
 const subtitles = ref([])
-const videoRef = ref(null)
+const videoPlayerRef = ref(null)
+const subtitleEditorRef = ref(null)
 const currentTime = ref(0)
 const downloadUrl = ref(null)
 const downloadFilename = ref('output.mp4')
+const hasVideo = ref(false)
+const videoUrl = ref('')
+
+// 视频信息
+const videoInfo = computed(() => ({
+  width: project.value.width || 0,
+  height: project.value.height || 0,
+  fps: project.value.fps || 0,
+  duration: project.value.duration || 0
+}))
 
 const loadProject = async () => {
   try {
     const data = await getProject(projectId)
     project.value = data
     subtitles.value = data.subtitles || []
+
+    // 加载视频信息
+    await loadVideoInfo()
   } catch (error) {
     ElMessage.error('加载项目失败：' + error.message)
+  }
+}
+
+const loadVideoInfo = async () => {
+  try {
+    const videoData = await getProjectVideo(projectId)
+    const newHasVideo = videoData.has_video && videoData.video_url
+
+    // 只有当状态真正改变时才更新
+    if (newHasVideo !== hasVideo.value) {
+      hasVideo.value = newHasVideo
+      console.log('hasVideo状态改变:', hasVideo.value)
+    }
+
+    if (videoData.has_video && videoData.video_url) {
+      videoUrl.value = videoData.video_url
+      project.value.width = videoData.width
+      project.value.height = videoData.height
+      project.value.fps = videoData.fps
+      project.value.duration = videoData.duration
+      console.log('视频信息已更新:', {
+        videoUrl: videoUrl.value,
+        width: project.value.width,
+        height: project.value.height,
+        fps: project.value.fps,
+        duration: project.value.duration
+      })
+    }
+  } catch (error) {
+    console.error('加载视频信息失败:', error)
   }
 }
 
@@ -164,9 +216,9 @@ const saveSubtitles = async (subtitleList) => {
   }
 }
 
-const onUploadSuccess = () => {
+const onUploadSuccess = async () => {
   ElMessage.success('视频上传成功')
-  loadProject()
+  await loadVideoInfo()
 }
 
 const onStepComplete = (status, data) => {
@@ -200,9 +252,22 @@ const downloadVideo = () => {
   document.body.removeChild(link)
 }
 
-const onTimeUpdate = () => {
-  if (videoRef.value) {
-    currentTime.value = videoRef.value.currentTime
+// 字幕联动
+const onSubtitleChange = (index) => {
+  if (subtitleEditorRef.value) {
+    subtitleEditorRef.value.selectSubtitle(index)
+    subtitleEditorRef.value.scrollToSubtitle(index)
+  }
+}
+
+const onTimeUpdate = (time) => {
+  // console.log('ProjectDetail onTimeUpdate:', time) // 减少日志噪音
+  currentTime.value = time
+}
+
+const seekToSubtitle = (index) => {
+  if (videoPlayerRef.value) {
+    videoPlayerRef.value.seekToSubtitle(index)
   }
 }
 
@@ -263,16 +328,6 @@ onMounted(loadProject)
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
-}
-
-.upload-section {
-  padding: 20px;
-}
-
-.video-player video {
-  width: 100%;
-  max-height: 500px;
-  background: #000;
 }
 
 .right-panel {

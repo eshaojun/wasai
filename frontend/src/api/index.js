@@ -62,6 +62,13 @@ export const getSettings = () => api.get('/settings/')
 
 export const updateSettings = (data) => api.put('/settings/', data)
 
+// 获取预设翻译提示词模板
+export const getTranslatePrompts = () => api.get('/settings/translate/prompts')
+
+// ===== 视频上传 API =====
+
+export const getProjectVideo = (projectId) => api.get(`/upload/video/${projectId}`)
+
 // ===== AI 服务 API =====
 
 export const executeASR = (projectId, params) =>

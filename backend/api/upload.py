@@ -70,8 +70,20 @@ async def get_video_info(project_id: int, db: Session = Depends(get_db)):
     if not project.original_video_path:
         return {"has_video": False}
 
+    # 将文件系统路径转换为HTTP URL
+    # 路径格式: uploads/project_1/original.mp4 -> /uploads/project_1/original.mp4
+    try:
+        video_path = Path(project.original_video_path)
+        # 获取相对于uploads目录的相对路径
+        relative_path = video_path.relative_to(UPLOAD_DIR.absolute())
+        video_url = f"/uploads/{relative_path.as_posix()}"
+    except ValueError:
+        # 如果路径不在uploads目录下，使用原路径（兼容旧数据）
+        video_url = None
+
     return {
         "has_video": True,
+        "video_url": video_url,
         "video_path": project.original_video_path,
         "duration": project.duration,
         "width": project.width,

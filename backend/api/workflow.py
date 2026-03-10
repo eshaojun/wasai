@@ -140,13 +140,31 @@ def execute_translate(
 
     # 加载设置
     settings = load_settings()
+    translate_settings = settings.translate
 
-    # 执行翻译
+    # 根据提供商类型选择API配置
+    if translate_settings.provider == "openai":
+        api_key = translate_settings.openai_api_key
+        base_url = None  # 使用OpenAI默认地址
+        model = translate_settings.openai_model
+    else:
+        # custom - 使用自定义配置
+        api_key = translate_settings.custom_api_key
+        base_url = translate_settings.custom_base_url
+        model = translate_settings.custom_model
+
+    # 验证API配置
+    if not api_key:
+        raise HTTPException(status_code=400, detail="未配置API密钥，请先在设置中配置")
+
+    # 创建翻译服务
     translate_service = TranslateService(
-        provider=settings.translate_provider,
-        api_key=settings.openai_api_key,
-        base_url=settings.openai_base_url,
-        model=settings.translate_model
+        provider=translate_settings.provider,
+        api_key=api_key,
+        base_url=base_url,
+        model=model,
+        prompt=translate_settings.translate_prompt,
+        batch_size=translate_settings.translate_batch_size
     )
 
     try:

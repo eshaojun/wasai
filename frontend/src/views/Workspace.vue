@@ -47,7 +47,7 @@
           <el-input
             v-model="newProject.description"
             type="textarea"
-            rows="3"
+            :rows="3"
             placeholder="输入项目描述（可选）"
           />
         </el-form-item>
