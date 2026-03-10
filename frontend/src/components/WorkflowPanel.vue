@@ -51,6 +51,18 @@
       <el-progress :percentage="progress" :status="progressStatus" />
       <div class="progress-text">{{ progressText }}</div>
     </div>
+
+    <!-- 导出完成后的下载链接 -->
+    <div v-if="downloadUrl" class="download-area">
+      <el-alert type="success" :closable="false" show-icon>
+        <template #title>
+          视频导出完成
+          <el-link type="primary" :href="downloadUrl" :download="downloadFilename" class="download-link">
+            点击下载
+          </el-link>
+        </template>
+      </el-alert>
+    </div>
   </div>
 </template>
 
@@ -114,6 +126,8 @@ const exporting = ref(false)
 const progress = ref(0)
 const progressText = ref('')
 const progressStatus = ref('')
+const downloadUrl = ref(null)
+const downloadFilename = ref('output.mp4')
 
 const executeCurrentStep = async () => {
   executing.value = true
@@ -191,6 +205,13 @@ const exportVideo = async () => {
     progress.value = 100
     progressText.value = '视频导出完成'
     ElMessage.success('视频导出成功')
+    // 保存下载链接
+    if (result.download_url) {
+      downloadUrl.value = result.download_url
+    }
+    if (result.filename) {
+      downloadFilename.value = result.filename
+    }
     emit('export-complete', result)
   } catch (error) {
     ElMessage.error('导出失败：' + error.message)
@@ -291,5 +312,13 @@ const exportVideo = async () => {
   margin-top: 8px;
   color: #606266;
   font-size: 14px;
+}
+
+.download-area {
+  margin-top: 20px;
+}
+
+.download-link {
+  margin-left: 8px;
 }
 </style>

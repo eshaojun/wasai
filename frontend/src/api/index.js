@@ -76,4 +76,23 @@ export const translateSubtitles = (projectId, data) =>
 export const exportVideo = (projectId, params) =>
   api.post(`/projects/${projectId}/export`, params)
 
+// ===== 字幕导入导出 API =====
+
+export const previewImportSubtitles = (projectId, file) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  return api.post(`/projects/${projectId}/subtitles/preview-import`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+}
+
+export const importSubtitles = (projectId, subtitles, mode = 'replace') =>
+  api.post(`/projects/${projectId}/subtitles/import?mode=${mode}`, subtitles)
+
+export const exportSubtitles = (projectId, format = 'srt') => {
+  return api.get(`/projects/${projectId}/subtitles/export?format=${format}`, {
+    responseType: 'blob'
+  })
+}
+
 export default api

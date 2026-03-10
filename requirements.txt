@@ -11,3 +11,4 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 ffmpeg-python==0.2.0
 websockets==13.1
+chardet==5.2.0

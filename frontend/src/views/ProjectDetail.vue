@@ -8,6 +8,13 @@
         <h1>{{ project.name }}</h1>
       </div>
       <div class="header-actions">
+        <el-button
+          v-if="downloadUrl"
+          type="success"
+          @click="downloadVideo"
+        >
+          <el-icon><Download /></el-icon>下载视频
+        </el-button>
         <el-button type="primary" @click="saveProject">保存</el-button>
       </div>
     </div>
@@ -91,7 +98,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -121,6 +128,8 @@ const project = ref({
 const subtitles = ref([])
 const videoRef = ref(null)
 const currentTime = ref(0)
+const downloadUrl = ref(null)
+const downloadFilename = ref('output.mp4')
 
 const loadProject = async () => {
   try {
@@ -172,6 +181,23 @@ const onExportComplete = (data) => {
   if (data.output_path) {
     project.value.output_video_path = data.output_path
   }
+  if (data.download_url) {
+    downloadUrl.value = data.download_url
+  }
+  if (data.filename) {
+    downloadFilename.value = data.filename
+  }
+}
+
+const downloadVideo = () => {
+  if (!downloadUrl.value) return
+  // 创建临时链接下载
+  const link = document.createElement('a')
+  link.href = downloadUrl.value
+  link.download = downloadFilename.value
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
 }
 
 const onTimeUpdate = () => {
