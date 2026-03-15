@@ -37,6 +37,15 @@
         {{ currentStepAction }}
       </el-button>
       <el-button
+        v-if="currentStep === 3"
+        type="info"
+        size="large"
+        plain
+        @click="showTTSSettings = true"
+      >
+        <el-icon><Setting /></el-icon>配音设置
+      </el-button>
+      <el-button
         v-if="canExport"
         type="success"
         size="large"
@@ -51,13 +60,89 @@
       <el-progress :percentage="progress" :status="progressStatus" />
       <div class="progress-text">{{ progressText }}</div>
     </div>
+    
+    <!-- TTS 设置弹窗 -->
+    <el-dialog
+      v-model="showTTSSettings"
+      title="配音设置"
+      width="500px"
+    >
+      <el-form :model="ttsSettings" label-width="100px">
+        <el-form-item label="TTS 提供商">
+          <el-radio-group v-model="ttsSettings.provider">
+            <el-radio label="openai">OpenAI TTS</el-radio>
+            <el-radio label="local">本地模型 (Qwen3-TTS)</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        
+        <!-- OpenAI TTS 设置 -->
+        <template v-if="ttsSettings.provider === 'openai'">
+          <el-form-item label="声音">
+            <el-select v-model="ttsSettings.voice" style="width: 100%">
+              <el-option label="Alloy（中性）" value="alloy" />
+              <el-option label="Echo（男性）" value="echo" />
+              <el-option label="Fable（男性）" value="fable" />
+              <el-option label="Onyx（男性）" value="onyx" />
+              <el-option label="Nova（女性）" value="nova" />
+              <el-option label="Shimmer（女性）" value="shimmer" />
+            </el-select>
+          </el-form-item>
+        </template>
+        
+        <!-- 本地 TTS 设置 -->
+        <template v-if="ttsSettings.provider === 'local'">
+          <el-form-item label="说话人">
+            <el-select v-model="ttsSettings.speaker" style="width: 100%">
+              <el-option-group label="中文">
+                <el-option label="Vivian - 明亮、略带尖锐的年轻女声" value="vivian" />
+                <el-option label="Serena - 温暖、温柔的年轻女声" value="serena" />
+                <el-option label="Dylan - 年轻北京男声" value="dylan" />
+                <el-option label="Eric - 活泼成都男声" value="eric" />
+                <el-option label="Uncle Fu - 低沉醇厚的男声" value="uncle_fu" />
+              </el-option-group>
+              <el-option-group label="英文">
+                <el-option label="Ryan - 富有节奏感的动感男声" value="ryan" />
+                <el-option label="Aiden - 阳光美式男声" value="aiden" />
+              </el-option-group>
+              <el-option-group label="其他语言">
+                <el-option label="Ono Anna - 俏皮日本女声（日语）" value="ono_anna" />
+                <el-option label="Sohee - 温暖韩语女声（韩语）" value="sohee" />
+              </el-option-group>
+            </el-select>
+          </el-form-item>
+          <el-form-item label="语言">
+            <el-select v-model="ttsSettings.language" style="width: 100%">
+              <el-option label="自动检测" value="auto" />
+              <el-option label="中文" value="zh" />
+              <el-option label="英文" value="en" />
+              <el-option label="日语" value="ja" />
+              <el-option label="韩语" value="ko" />
+              <el-option label="法语" value="fr" />
+              <el-option label="德语" value="de" />
+              <el-option label="意大利语" value="it" />
+              <el-option label="葡萄牙语" value="pt" />
+              <el-option label="俄语" value="ru" />
+              <el-option label="西班牙语" value="es" />
+            </el-select>
+          </el-form-item>
+        </template>
+      </el-form>
+      
+      <template #footer>
+        <el-button @click="showTTSSettings = false">取消</el-button>
+        <el-button type="primary" @click="saveTTSSettings" :loading="savingSettings">
+          保存到设置
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { executeASR, executeTTS, exportVideo as exportVideoApi } from '@/api'
+import { Check, Loading, ArrowRight, Download, Setting } from '@element-plus/icons-vue'
+import { executeASR, executeTTS, exportVideo as exportVideoApi, getSettings, updateSettings } from '@/api'
 
 const props = defineProps({
   project: {
@@ -115,6 +200,51 @@ const progress = ref(0)
 const progressText = ref('')
 const progressStatus = ref('')
 
+// TTS 设置弹窗
+const showTTSSettings = ref(false)
+const savingSettings = ref(false)
+const ttsSettings = ref({
+  provider: 'openai',
+  voice: 'alloy',
+  speaker: 'vivian',
+  language: 'auto'
+})
+
+// 加载设置
+const loadSettings = async () => {
+  try {
+    const settings = await getSettings()
+    ttsSettings.value.provider = settings.tts_provider || 'openai'
+    ttsSettings.value.voice = settings.tts_voice || 'alloy'
+    ttsSettings.value.speaker = settings.local_tts_speaker || 'vivian'
+    ttsSettings.value.language = settings.local_tts_language || 'auto'
+  } catch (error) {
+    console.error('加载设置失败:', error)
+  }
+}
+
+// 保存TTS设置
+const saveTTSSettings = async () => {
+  savingSettings.value = true
+  try {
+    const settings = await getSettings()
+    const updatedSettings = {
+      ...settings,
+      tts_provider: ttsSettings.value.provider,
+      tts_voice: ttsSettings.value.voice,
+      local_tts_speaker: ttsSettings.value.speaker,
+      local_tts_language: ttsSettings.value.language
+    }
+    await updateSettings(updatedSettings)
+    ElMessage.success('设置已保存')
+    showTTSSettings.value = false
+  } catch (error) {
+    ElMessage.error('保存设置失败：' + error.message)
+  } finally {
+    savingSettings.value = false
+  }
+}
+
 const executeCurrentStep = async () => {
   executing.value = true
   progress.value = 0
@@ -168,9 +298,18 @@ const executeTTSStep = async () => {
   progressText.value = '正在生成配音...'
   progress.value = 30
 
-  const result = await executeTTS(props.project.id, {
+  // 使用当前TTS设置
+  const ttsParams = {
     language: props.project.target_language
-  })
+  }
+  
+  // 如果是本地TTS，传递说话人和语言参数
+  if (ttsSettings.value.provider === 'local') {
+    ttsParams.speaker = ttsSettings.value.speaker
+    ttsParams.tts_language = ttsSettings.value.language
+  }
+
+  const result = await executeTTS(props.project.id, ttsParams)
 
   progress.value = 100
   progressText.value = '配音生成完成'
@@ -198,6 +337,8 @@ const exportVideo = async () => {
     exporting.value = false
   }
 }
+
+onMounted(loadSettings)
 </script>
 
 <style scoped>
