@@ -28,6 +28,8 @@ class TranslateRequest(BaseModel):
 
 class TTSRequest(BaseModel):
     language: str = "en"
+    speaker: Optional[str] = None  # 可选的说话人（用于本地TTS）
+    tts_language: Optional[str] = None  # 可选的TTS语言（用于本地TTS）
 
 
 class ExportRequest(BaseModel):
@@ -192,22 +194,30 @@ def execute_tts(
     audio_dir = project_dir / "audio"
     audio_dir.mkdir(exist_ok=True)
 
-    # 执行 TTS
+    # 执行 TTS - 使用设置中的说话人和语言（如果请求中没有指定）
+    local_speaker = request.speaker or settings.local_tts_speaker
+    local_language = request.tts_language or settings.local_tts_language
+    
     tts_service = TTSService(
         provider=settings.tts_provider,
         api_key=settings.openai_api_key,
         base_url=settings.openai_base_url,
         model=settings.tts_model,
-        voice=settings.tts_voice
+        voice=settings.tts_voice,
+        local_base_url=settings.local_tts_base_url,
+        local_speaker=local_speaker,
+        local_language=local_language
     )
 
     subtitle_dicts = [{"translated_text": s.translated_text} for s in subtitles]
 
     try:
+        # 对于本地TTS，使用指定的语言或项目目标语言
+        tts_lang = local_language if settings.tts_provider == "local" else request.language
         audio_paths = tts_service.synthesize_subtitles(
             subtitle_dicts,
             str(audio_dir),
-            request.language
+            tts_lang
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"语音合成失败: {str(e)}")

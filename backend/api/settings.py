@@ -1,8 +1,11 @@
 import json
+import base64
+import requests
 from pathlib import Path
 from typing import Optional
 from pydantic import BaseModel
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 
 router = APIRouter()
 
@@ -24,11 +27,16 @@ class Settings(BaseModel):
     translate_model: str = "gpt-4o-mini"
 
     # TTS 设置
-    tts_provider: str = "openai"  # openai, azure, coqui
+    tts_provider: str = "openai"  # openai, azure, coqui, local
     azure_api_key: Optional[str] = None
     azure_region: Optional[str] = None
     tts_model: str = "tts-1"
     tts_voice: str = "alloy"
+    
+    # 本地 TTS (Qwen3-TTS) 设置
+    local_tts_base_url: Optional[str] = "http://localhost:8003"  # 本地TTS服务地址
+    local_tts_speaker: str = "vivian"  # 默认说话人
+    local_tts_language: str = "auto"  # 默认语言
 
     # 默认语言
     default_source_language: str = "zh"
@@ -97,4 +105,83 @@ def get_tts_settings():
         "azure_region": settings.azure_region,
         "model": settings.tts_model,
         "voice": settings.tts_voice,
+        "local_base_url": settings.local_tts_base_url,
+        "local_speaker": settings.local_tts_speaker,
+        "local_language": settings.local_tts_language,
     }
+
+
+class TTSTestRequest(BaseModel):
+    """TTS 测试请求"""
+    text: str = "你好，这是Qwen3-TTS的测试语音。"
+    speaker: str = "vivian"
+    language: str = "auto"
+    base_url: str = "http://localhost:8003"
+
+
+@router.post("/tts/test")
+def test_tts_synthesis(request: TTSTestRequest):
+    """
+    测试本地 TTS 合成
+    
+    根据提供的参数调用本地 Qwen3-TTS 服务生成音频并返回文件流
+    """
+    # 构建本地TTS服务URL
+    url = f"{request.base_url.rstrip('/')}/tts/custom-voice"
+    
+    # 语言映射
+    language_mapping = {
+        "zh": "Chinese",
+        "en": "English",
+        "fr": "French",
+        "de": "German",
+        "it": "Italian",
+        "ja": "Japanese",
+        "ko": "Korean",
+        "pt": "Portuguese",
+        "ru": "Russian",
+        "es": "Spanish",
+        "auto": "Auto"
+    }
+    
+    mapped_language = language_mapping.get(request.language, request.language.capitalize())
+    
+    # 构建请求体
+    payload = {
+        "text": request.text,
+        "speaker": request.speaker.capitalize(),
+        "language": mapped_language,
+        "instruct": ""
+    }
+    
+    try:
+        # 调用本地TTS服务
+        response = requests.post(url, json=payload, timeout=120)
+        response.raise_for_status()
+        result = response.json()
+        
+        if not result.get("success") or not result.get("audio_base64"):
+            raise HTTPException(status_code=500, detail=result.get("message", "TTS合成失败"))
+        
+        # 解码base64音频
+        audio_data = base64.b64decode(result["audio_base64"])
+        
+        # 返回音频流
+        from io import BytesIO
+        audio_stream = BytesIO(audio_data)
+        
+        return StreamingResponse(
+            audio_stream,
+            media_type="audio/wav",
+            headers={
+                "Content-Disposition": f"attachment; filename=tts_test_{request.speaker}.wav",
+                "Content-Length": str(len(audio_data))
+            }
+        )
+        
+    except requests.exceptions.ConnectionError:
+        raise HTTPException(status_code=503, detail=f"无法连接到本地TTS服务: {request.base_url}")
+    except requests.exceptions.Timeout:
+        raise HTTPException(status_code=504, detail="TTS服务响应超时")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"TTS合成失败: {str(e)}")

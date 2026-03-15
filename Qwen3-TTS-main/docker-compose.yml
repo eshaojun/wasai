@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  qwen3-tts-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # 默认使用 1.7B CustomVoice 模型，支持语音控制和9种预设音色
+        # 可选模型:
+        # - Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice (推荐，支持语音控制)
+        # - Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign (语音设计模型)
+        # - Qwen/Qwen3-TTS-12Hz-1.7B-Base (语音克隆基础模型)
+        # - Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice (轻量版)
+        # - Qwen/Qwen3-TTS-12Hz-0.6B-Base (轻量克隆版)
+        MODEL_NAME: ${MODEL_NAME:-Qwen3-TTS-12Hz-0.6B-CustomVoice}
+    container_name: qwen3-tts-api
+    runtime: nvidia  # 使用 NVIDIA GPU
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - MODEL_NAME=${MODEL_NAME:-Qwen3-TTS-12Hz-0.6B-CustomVoice}
+      - HF_HOME=/app/models/.cache
+      - HF_HUB_OFFLINE=1  # 离线模式，模型已预下载
+    ports:
+      - "8003:8003"
+    volumes:
+      # 挂载模型目录（可选，如果需要持久化或共享模型）
+      - ./models:/app/models
+      - ./api.py:/app/api.py
+      - ./qwen_tts:/app/qwen_tts
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    # 临时：覆盖启动命令，保持容器运行以便手动下载模型
+    # command: ["tail", "-f", "/dev/null"]
+    command: ["python", "-m", "uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8003", "--workers", "1"]
+    
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s

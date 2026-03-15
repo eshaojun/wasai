@@ -1,0 +1,24 @@
+# FastAPI 及相关依赖
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.0.0
+python-multipart>=0.0.6
+
+# Qwen3-TTS 依赖
+transformers==4.57.3
+accelerate==1.12.0
+huggingface-hub>=0.25.0
+modelscope>=1.20.0
+gradio>=4.0.0
+librosa>=0.10.0
+torchaudio>=2.0.0
+soundfile>=0.12.0
+sox>=1.5.0
+onnxruntime>=1.16.0
+einops>=0.7.0
+numpy<2.0.0
+scipy>=1.11.0
+
+# 其他工具
+aiohttp>=3.9.0
+tqdm>=4.66.0
